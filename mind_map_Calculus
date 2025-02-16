@@ -1,0 +1,4 @@
+// Mind Map for Calculus
+digraph {
+	rankdir=LR size=10
+}
