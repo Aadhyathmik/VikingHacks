@@ -136,14 +136,48 @@ def get_node_information(node, concepts):
             info.append(f"**{concept1} -> {concept2}:** {explanation}")
     return "\n".join(info)
 
-# Function to generate quiz questions
-def generate_quiz_questions(concepts):
-    questions = []
-    for concept1, concept2, explanation in concepts:
-        question = f"What is the relationship between {concept1} and {concept2}?"
-        answer = explanation
-        questions.append((question, answer))
-    return questions
+# Function to generate college-level quiz questions
+def generate_college_quiz(topic):
+    prompt = f"Generate a college-level quiz with 5 questions about {topic}. Include a mix of problem-solving questions (e.g., solving integrals) and conceptual/theoretical questions. For each question, provide the correct answer and an explanation of why the answer is correct. Format: Question: [question] | Answer: [answer] | Explanation: [explanation]"
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a quiz generator for college-level topics."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        content = response.choices[0].message.content
+        st.write("OpenAI API Response:", content)  # Debugging: Log the API response
+        questions = []
+        for line in content.split("\n"):
+            if line.startswith("Question:"):
+                try:
+                    question = line.split("Question: ")[1].split(" | ")[0]
+                    answer = line.split("Answer: ")[1].split(" | ")[0]
+                    explanation = line.split("Explanation: ")[1]
+                    questions.append((question, answer, explanation))
+                except IndexError:
+                    st.warning(f"Skipping malformed line: {line}")
+        if not questions:
+            st.warning("No questions generated. Using fallback questions.")
+            questions = [
+                ("What is the derivative of f(x) = x^2?", "2x", "The derivative of x^2 is 2x, using the power rule."),
+                ("What is the integral of f(x) = 2x?", "x^2 + C", "The integral of 2x is x^2 + C, where C is the constant of integration."),
+                ("What is the limit of f(x) = 1/x as x approaches infinity?", "0", "As x approaches infinity, 1/x approaches 0."),
+                ("What is the chain rule in calculus?", "d/dx[f(g(x))] = f'(g(x)) * g'(x)", "The chain rule is used to differentiate composite functions."),
+                ("What is the Fundamental Theorem of Calculus?", "∫(a to b) f(x) dx = F(b) - F(a)", "The theorem connects differentiation and integration.")
+            ]
+        return questions
+    except Exception as e:
+        st.error(f"Error generating quiz: {e}")
+        return [
+            ("What is the derivative of f(x) = x^2?", "2x", "The derivative of x^2 is 2x, using the power rule."),
+            ("What is the integral of f(x) = 2x?", "x^2 + C", "The integral of 2x is x^2 + C, where C is the constant of integration."),
+            ("What is the limit of f(x) = 1/x as x approaches infinity?", "0", "As x approaches infinity, 1/x approaches 0."),
+            ("What is the chain rule in calculus?", "d/dx[f(g(x))] = f'(g(x)) * g'(x)", "The chain rule is used to differentiate composite functions."),
+            ("What is the Fundamental Theorem of Calculus?", "∫(a to b) f(x) dx = F(b) - F(a)", "The theorem connects differentiation and integration.")
+        ]
 
 # Function to share a concept map
 def share_concept_map(user_id, topic, map_data):
@@ -171,6 +205,8 @@ def interactive_ui():
         st.session_state.quiz_questions = []
     if 'quiz_answers' not in st.session_state:
         st.session_state.quiz_answers = {}
+    if 'quiz_results' not in st.session_state:
+        st.session_state.quiz_results = None
 
     # User authentication
     st.sidebar.title("User Authentication")
@@ -194,7 +230,7 @@ def interactive_ui():
         st.session_state.topic = topic
         with st.spinner("Generating Concept Map..."):
             st.session_state.concepts = generate_concept_map_with_explanations(topic)
-            st.session_state.quiz_questions = generate_quiz_questions(st.session_state.concepts)
+            st.session_state.quiz_questions = generate_college_quiz(topic)
     
     if st.session_state.topic and st.session_state.concepts:
         st.subheader("Concept Map Visualization")
@@ -236,17 +272,30 @@ def interactive_ui():
         # Interactive Quiz
         st.subheader("Interactive Quiz")
         if st.session_state.quiz_questions:
-            for i, (question, answer) in enumerate(st.session_state.quiz_questions):
+            for i, (question, answer, explanation) in enumerate(st.session_state.quiz_questions):
                 st.write(f"**Question {i + 1}:** {question}")
                 user_answer = st.text_input(f"Your answer for Question {i + 1}:", key=f"quiz_answer_{i}")
                 if user_answer:
                     st.session_state.quiz_answers[i] = user_answer
             if st.button("Submit Quiz"):
+                results = []
                 correct_answers = 0
-                for i, (question, answer) in enumerate(st.session_state.quiz_questions):
-                    if st.session_state.quiz_answers.get(i, "").strip().lower() == answer.lower():
+                for i, (question, correct_answer, explanation) in enumerate(st.session_state.quiz_questions):
+                    user_answer = st.session_state.quiz_answers.get(i, "").strip()
+                    is_correct = user_answer.lower() == correct_answer.lower()
+                    results.append((question, user_answer, correct_answer, explanation, is_correct))
+                    if is_correct:
                         correct_answers += 1
-                st.write(f"**Quiz Results:** You got {correct_answers} out of {len(st.session_state.quiz_questions)} correct!")
+                st.session_state.quiz_results = results
+                st.write("### Quiz Results")
+                st.write(f"**You scored {correct_answers} out of {len(st.session_state.quiz_questions)}!**")
+                for i, (question, user_answer, correct_answer, explanation, is_correct) in enumerate(results):
+                    st.write(f"**Question {i + 1}:** {question}")
+                    st.write(f"Your answer: {user_answer}")
+                    st.write(f"Correct answer: {correct_answer}")
+                    if not is_correct:
+                        st.write(f"**Explanation:** {explanation}")
+                    st.write("---")
         else:
             st.write("No quiz questions available yet. Generate a concept map first.")
 
